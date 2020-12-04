@@ -1,10 +1,16 @@
 from utils import check_novelty, sample
+from dataset import SmileDataset
 from rdkit.Chem import QED
 from rdkit.Chem import Crippen
 from rdkit.Chem.Descriptors import ExactMolWt
 from rdkit import Chem
 import math
-
+from tqdm import tqdm
+import argparse
+from model import GPT, GPTConfig
+import pandas as pd
+import torch
+import numpy as np
 
 if __name__ == '__main__':
 
@@ -12,6 +18,7 @@ if __name__ == '__main__':
 
 	parser.add_argument('--model_weight', type=str, help="path of model weights", required=True)
 	parser.add_argument('--csv_name', type=str, help="name to save the generated mols in csv format", required=True)
+	parser.add_argument('--data_name', type=str, default = 'moses', help="name of the dataset to train on", required=False)
 	parser.add_argument('--gen_size', type=int, default = 1000, help="number of times to generate from a batch", required=False)
 	parser.add_argument('--vocab_size', type=int, default = 28, help="number of layers", required=False)
 	parser.add_argument('--block_size', type=int, default = 57, help="number of layers", required=False)
@@ -34,18 +41,32 @@ if __name__ == '__main__':
 	               n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd)
 	model = GPT(mconf)
 
-	model.load_state_dict(torch.load('../cond_gpt/weights/' + args.model_weight))
+	data = pd.read_csv('datasets/' + args.data_name + '.csv')
+	data.columns = data.columns.str.lower()
+	smiles = data['smiles']
+
+	lens = [len(i) for i in smiles]
+	max_len = max(lens)
+	smiles = [ i + str('<')*(max_len - len(i)) for i in smiles]
+	content = ' '.join(smiles)
+	chars = sorted(list(set(content)))
+
+	stoi = { ch:i for i,ch in enumerate(chars) }
+	itos = { i:ch for i,ch in enumerate(chars) }
+
+
+	model.load_state_dict(torch.load('weights/' + args.model_weight))
 	model.to('cuda')
 	print('Model loaded')
 
 	gen_iter = math.ceil(args.gen_size / 512)
 
 	for i in tqdm(range(gen_iter)):
-	    x = torch.tensor([train_dataset.stoi[s] for s in context], dtype=torch.long)[None,...].repeat(512, 1).to(trainer.device)
+	    x = torch.tensor([stoi[s] for s in context], dtype=torch.long)[None,...].repeat(512, 1).to('cuda')
 	    p = None
-	    y = sample(model, x, block_size, temperature=0.9, sample=True, top_k=5, prop = p)
+	    y = sample(model, x, args.block_size, temperature=0.9, sample=True, top_k=5, prop = p)
 	    for gen_mol in y:
-	        completion = ''.join([train_dataset.itos[int(i)] for i in gen_mol])
+	        completion = ''.join([itos[int(i)] for i in gen_mol])
 	        completion = completion.replace('<', '')
 	        mol = Chem.MolFromSmiles(completion)
 	        if mol:
@@ -57,23 +78,23 @@ if __name__ == '__main__':
 	mol_dict = []
 
 
-	for i, wt in molecules:
-	    mol_dict.append({'molecule' : i, 'molwt': ExactMolWt(i), 'smiles': Chem.MolToSmiles(i), 'cond_molwt': wt})
+	# for i, wt in molecules:
+	#     mol_dict.append({'molecule' : i, 'molwt': ExactMolWt(i), 'smiles': Chem.MolToSmiles(i), 'cond_molwt': wt})
 	    
-	for i, qe in molecules:
-	    mol_dict.append({'molecule' : i, 'qed': qed(i), 'smiles': Chem.MolToSmiles(i), 'cond_qed': qe})
+	# for i, qe in molecules:
+	#     mol_dict.append({'molecule' : i, 'qed': qed(i), 'smiles': Chem.MolToSmiles(i), 'cond_qed': qe})
 
-	for i, logp in molecules:
-	    mol_dict.append({'molecule' : i, 'logp': Crippen.MolLogP(i), 'smiles': Chem.MolToSmiles(i), 'cond_logp': logp})
+	# for i, logp in molecules:
+	#     mol_dict.append({'molecule' : i, 'logp': Crippen.MolLogP(i), 'smiles': Chem.MolToSmiles(i), 'cond_logp': logp})
 	    
 	for i in molecules:
 	    mol_dict.append({'molecule' : i, 'smiles': Chem.MolToSmiles(i)})
 
 	results = pd.DataFrame(mol_dict)
-	results.to_csv(args.csv_name + '.csv', index = False)
+	results.to_csv('gen_csv/' + args.csv_name + '.csv', index = False)
 
 	unique_smiles = list(set(results['smiles']))
-	novel_ratio = check_novelty(list(set(smiles)), data['SMILES'])
+	novel_ratio = check_novelty(unique_smiles, data['smiles'])
 
 	print('Valid ratio: ', np.round(len(results)/(512*gen_iter), 3))
 	print('Unique ratio: ', np.round(len(unique_smiles)/len(results), 3))
