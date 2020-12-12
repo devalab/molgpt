@@ -54,14 +54,9 @@ class CausalSelfAttention(nn.Module):
         # output projection
         self.proj = nn.Linear(config.n_embd, config.n_embd)
         # causal mask to ensure that attention is only applied to the left in the input sequence
-        self.register_buffer("mask", torch.tril(torch.ones(config.block_size + config.num_props, config.block_size + config.num_props))
-                                     .view(1, 1, config.block_size + config.num_props, config.block_size + config.num_props))
-
-        # if config.num_props:
-        #     prop_attn = torch.ones((config.block_size, config.num_props)).view(1, 1, config.block_size, config.num_props)
-        #     self.mask = torch.cat([prop_attn, self.mask], -1)
-        #     prop_attn = torch.ones((config.num_props, config.block_size + config.num_props)).view(1, 1, config.num_props, config.block_size + config.num_props)
-        #     self.mask = torch.cat([prop_attn, self.mask], -2)   
+        num = int(bool(config.num_props)) +  int(config.scaffold_maxlen)    #  int(config.scaffold) 
+        self.register_buffer("mask", torch.tril(torch.ones(config.block_size + num, config.block_size + num))
+                                     .view(1, 1, config.block_size + num, config.block_size + num))
 
         self.n_head = config.n_head
 
@@ -118,8 +113,7 @@ class GPT(nn.Module):
         self.tok_emb = nn.Embedding(config.vocab_size, config.n_embd)
         self.type_emb = nn.Embedding(2, config.n_embd)
         if config.num_props:
-            for i in range(config.num_props):
-                setattr(self, f'prop{i+1}_emb', nn.Embedding(getattr(config, f'prop{i+1}_embd'), config.n_embd))
+            self.prop_nn = nn.Linear(config.num_props, config.n_embd)
      
         self.pos_emb = nn.Parameter(torch.zeros(1, config.block_size, config.n_embd))
         self.drop = nn.Dropout(config.embd_pdrop)
@@ -192,23 +186,31 @@ class GPT(nn.Module):
         optimizer = torch.optim.AdamW(optim_groups, lr=train_config.learning_rate, betas=train_config.betas)
         return optimizer
 
-    def forward(self, idx, targets=None, prop = None):
+    def forward(self, idx, targets=None, prop = None, scaffold = None):
         b, t = idx.size()
         assert t <= self.block_size, "Cannot forward, model block size is exhausted."
 
         if self.config.num_props:
-            assert prop.size(-1) == self.config.num_props, "Num_props should be equal to last dim of property vector"
+            assert prop.size(-1) == self.config.num_props, "Num_props should be equal to last dim of property vector"           
 
         # forward the GPT model
         token_embeddings = self.tok_emb(idx) # each index maps to a (learnable) vector
         position_embeddings = self.pos_emb[:, :t, :] # each position maps to a (learnable) vector
         type_embeddings = self.type_emb(torch.ones((b,t), dtype = torch.long, device = idx.device))
         x = self.drop(token_embeddings + position_embeddings + type_embeddings)
-        for i in range(self.config.num_props):
+
+        if self.config.num_props:
             type_embd = self.type_emb(torch.zeros((b, 1), dtype = torch.long, device = idx.device))
-            p = getattr(self, f'prop{i+1}_emb')(prop[:, i].unsqueeze(-1))
+            # p = self.prop_nn(prop.unsqueeze(1))
+            p = self.prop_nn(prop)
             p += type_embd
             x = torch.cat([p, x], 1)
+
+        if self.config.scaffold:
+            type_embd = self.type_emb(torch.zeros((b, 1), dtype = torch.long, device = idx.device))
+            scaffold_embeds = self.tok_emb(scaffold)     # .mean(1, keepdim = True)
+            scaffold_embeds += type_embd
+            x = torch.cat([scaffold_embeds, x], 1)
 
         # x = self.blocks(x)
         attn_maps = []
@@ -220,8 +222,9 @@ class GPT(nn.Module):
         x = self.ln_f(x)
         logits = self.head(x)
 
-        if self.config.num_props:
-            logits = logits[:, self.config.num_props:, :]
+        if self.config.num_props or self.config.scaffold:
+            num = int(bool(self.config.num_props)) + int(self.config.scaffold_maxlen)      # int(self.config.scaffold)
+            logits = logits[:, num:, :]
 
         # if we are given some desired targets also calculate the loss
         loss = None
