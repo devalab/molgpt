@@ -54,7 +54,8 @@ class CausalSelfAttention(nn.Module):
         # output projection
         self.proj = nn.Linear(config.n_embd, config.n_embd)
         # causal mask to ensure that attention is only applied to the left in the input sequence
-        num = int(bool(config.num_props)) +  int(config.scaffold_maxlen)    #  int(config.scaffold) 
+        # num = int(bool(config.num_props)) +  int(config.scaffold_maxlen)    #  int(config.scaffold) 
+        num = 1
         self.register_buffer("mask", torch.tril(torch.ones(config.block_size + num, config.block_size + num))
                                      .view(1, 1, config.block_size + num, config.block_size + num))
 
@@ -124,6 +125,9 @@ class GPT(nn.Module):
         self.head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         self.block_size = config.block_size
+
+        if config.lstm:
+            self.lstm = nn.LSTM(input_size = config.n_embd, hidden_size = config.n_embd, num_layers = config.lstm_layers, dropout = 0.3, bidirectional = False)
         self.apply(self._init_weights)
 
         logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
@@ -151,16 +155,16 @@ class GPT(nn.Module):
         # separate out all parameters to those that will and won't experience regularizing weight decay
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (torch.nn.Linear, )
+        whitelist_weight_modules = (torch.nn.Linear, torch.nn.LSTM)
         blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.Embedding)
         for mn, m in self.named_modules():
             for pn, p in m.named_parameters():
                 fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
 
-                if pn.endswith('bias'):
+                if pn.endswith('bias') or ('bias' in pn):
                     # all biases will not be decayed
                     no_decay.add(fpn)
-                elif pn.endswith('weight') and isinstance(m, whitelist_weight_modules):
+                elif (pn.endswith('weight') or ('weight' in pn)) and isinstance(m, whitelist_weight_modules):
                     # weights of whitelist modules will be weight decayed
                     decay.add(fpn)
                 elif pn.endswith('weight') and isinstance(m, blacklist_weight_modules):
@@ -201,14 +205,19 @@ class GPT(nn.Module):
 
         if self.config.num_props:
             type_embd = self.type_emb(torch.zeros((b, 1), dtype = torch.long, device = idx.device))
-            # p = self.prop_nn(prop.unsqueeze(1))
-            p = self.prop_nn(prop)
+            p = self.prop_nn(prop.unsqueeze(1))
+            # p = self.prop_nn(prop)
             p += type_embd
             x = torch.cat([p, x], 1)
 
         if self.config.scaffold:
             type_embd = self.type_emb(torch.zeros((b, 1), dtype = torch.long, device = idx.device))
             scaffold_embeds = self.tok_emb(scaffold)     # .mean(1, keepdim = True)
+            if self.config.lstm:
+                scaffold_embeds = self.lstm(scaffold_embeds.permute(1,0,2))[1][0]
+                # scaffold_embeds = scaffold_embeds.reshape(scaffold_embeds.shape[1], scaffold_embeds.shape[0], 2, self.config.n_embd).mean(2)
+                scaffold_embeds = scaffold_embeds.mean(0, keepdim = True).permute(1,0,2)
+                # scaffold_embeds = scaffold_embeds.reshape(scaffold_embeds.shape[1], scaffold_embeds.shape[0], self.config.n_embd)
             scaffold_embeds += type_embd
             x = torch.cat([scaffold_embeds, x], 1)
 
@@ -223,7 +232,8 @@ class GPT(nn.Module):
         logits = self.head(x)
 
         if self.config.num_props or self.config.scaffold:
-            num = int(bool(self.config.num_props)) + int(self.config.scaffold_maxlen)      # int(self.config.scaffold)
+            # num = int(bool(self.config.num_props)) + int(self.config.scaffold_maxlen)      # int(self.config.scaffold)
+            num = 1
             logits = logits[:, num:, :]
 
         # if we are given some desired targets also calculate the loss

@@ -21,6 +21,7 @@ if __name__ == '__main__':
 
 	parser.add_argument('--model_weight', type=str, help="path of model weights", required=True)
 	parser.add_argument('--scaffold', action='store_true', default=False, help='condition on scaffold')
+	parser.add_argument('--lstm', action='store_true', default=False, help='use lstm for transforming scaffold')
 	parser.add_argument('--csv_name', type=str, help="name to save the generated mols in csv format", required=True)
 	parser.add_argument('--data_name', type=str, default = 'moses2', help="name of the dataset to train on", required=False)
 	parser.add_argument('--gen_size', type=int, default = 10000, help="number of times to generate from a batch", required=False)
@@ -30,6 +31,7 @@ if __name__ == '__main__':
 	parser.add_argument('--n_layer', type=int, default = 8, help="number of layers", required=False)
 	parser.add_argument('--n_head', type=int, default = 8, help="number of heads", required=False)
 	parser.add_argument('--n_embd', type=int, default = 256, help="embedding dimension", required=False)
+	parser.add_argument('--lstm_layers', type=int, default = 2, help="number of layers in lstm", required=False)
 
 	args = parser.parse_args()
 
@@ -51,14 +53,17 @@ if __name__ == '__main__':
 	scaffold_max_len = max(lens)
 
 	mconf = GPTConfig(args.vocab_size, args.block_size, num_props = args.num_props,
-	               n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, scaffold = args.scaffold, scaffold_maxlen = scaffold_max_len)
+	               n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, scaffold = args.scaffold, scaffold_maxlen = scaffold_max_len,
+	               lstm = args.lstm, lstm_layers = args.lstm_layers)
 	model = GPT(mconf)
 
 	scaffold = data[data['split']=='test_scaffolds']['scaffold_smiles'].values
 	scaffold = sorted(list(scaffold))
-	condition = [scaffold[0], scaffold[len(scaffold)//2], scaffold[-1]]
+	# condition = [scaffold[0], scaffold[len(scaffold)//2], scaffold[-1]]
 	# condition = np.random.choice(scaffold, size = 3, replace = False)
-	# condition = ['O=C(Cc1ccccc1)NCc1ccccc1', 'c1cnc2[nH]ccc2c1', 'c1ccc(-c2ccnnc2)cc1']
+	condition = ['O=C(Cc1ccccc1)NCc1ccccc1', 'c1cnc2[nH]ccc2c1', 'c1ccc(-c2ccnnc2)cc1']
+	# condition = ['c1cnc2[nH]ccc2c1']
+	# condition = ['O=C(CCc1cn[nH]c1)NCCC1CC2CCC1C2', 'O=C(CCC(=O)NCC1CCCO1)NCc1ccccc1', 'O=S(=O)(Cc1ccon1)NCc1cccs1']  # sim 0.9, 0.8, ~0.7
 	print(condition)
 	condition = [ i + str('<')*(scaffold_max_len - len(i)) for i in condition]
 
@@ -83,11 +88,12 @@ if __name__ == '__main__':
 	# for j in [0.3, 0.5, 0.7, 0.9]:
 	# for j in [[0.5, 0], [0.5, 4], [0.9, 0], [0.9, 4]]:
 	for j in condition:
+		# for c in [1.0, 2.0, 3.0]:
 		molecules = []
 		for i in tqdm(range(gen_iter)):
 		    x = torch.tensor([stoi[s] for s in context], dtype=torch.long)[None,...].repeat(512, 1).to('cuda')
 		    p = None
-		    # p = torch.tensor([[j]]).repeat(512, 1).to('cuda')   # for single condition
+		    # p = torch.tensor([[c]]).repeat(512, 1).to('cuda')   # for single condition
 		    # p = torch.tensor([j]).repeat(512, 1).unsqueeze(1).to('cuda')    # for multiple conditions
 		    sca = torch.tensor([stoi[s] for s in j], dtype=torch.long)[None,...].repeat(512, 1).to('cuda')
 		    y = sample(model, x, args.block_size, temperature=1.5, sample=True, top_k=None, prop = p, scaffold = sca)
@@ -118,7 +124,8 @@ if __name__ == '__main__':
 		print('Novelty ratio: ', np.round(novel_ratio/100, 3))
 
 		# results['condition'] = str((j[0], j[1]))
-		results['condition'] = j
+		# results['condition'] = c
+		results['scaffold_cond'] = j
 		results['qed'] = results['molecule'].apply(lambda x: QED.qed(x) )
 		results['logp'] = results['molecule'].apply(lambda x: Crippen.MolLogP(x) )
 		all_dfs.append(results)

@@ -29,7 +29,7 @@ class SmileDataset(Dataset):
             return len(self.data)
 
     def __getitem__(self, idx):
-        smiles, prop, scaffold = self.data[idx], self.prop.iloc[idx, :].values, self.sca[idx]
+        smiles, prop, scaffold = self.data[idx], self.prop[idx], self.sca[idx]    # self.prop.iloc[idx, :].values  --> if multiple properties
         smiles = smiles.strip()
 
         p = np.random.uniform()

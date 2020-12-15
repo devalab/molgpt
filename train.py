@@ -22,7 +22,8 @@ if __name__ == '__main__':
 
 	parser.add_argument('--run_name', type=str, help="name for wandb run", required=False)
 	parser.add_argument('--debug', action='store_true', default=False, help='debug')
-	parser.add_argument('--scaffold', action='store_true', default=False, help='condition on scaffold')
+	parser.add_argument('--scaffold', action='store_true', default=False, help='condition on scaffold') # in moses dataset, on average, there are only 5 molecules per scaffold
+	parser.add_argument('--lstm', action='store_true', default=False, help='use lstm for transforming scaffold')
 	parser.add_argument('--data_name', type=str, default = 'moses2', help="name of the dataset to train on", required=False)
 	parser.add_argument('--property', type=str, default = 'qed', help="which property to use for condition", required=False)
 	parser.add_argument('--num_props', type=int, default = 0, help="number of properties to use for condition", required=False)
@@ -33,7 +34,7 @@ if __name__ == '__main__':
 	parser.add_argument('--max_epochs', type=int, default = 10, help="total epochs", required=False)
 	parser.add_argument('--batch_size', type=int, default = 512, help="batch size", required=False)
 	parser.add_argument('--learning_rate', type=int, default = 6e-4, help="learning rate", required=False)
-
+	parser.add_argument('--lstm_layers', type=int, default = 2, help="number of layers in lstm", required=False)
 
 	args = parser.parse_args()
 
@@ -51,8 +52,11 @@ if __name__ == '__main__':
 	smiles = train_data['smiles']
 	vsmiles = val_data['smiles']
 	
-	prop = train_data[['qed', 'logp']]
-	vprop = val_data[['qed', 'logp']]
+	# prop = train_data[['qed', 'logp']]
+	# vprop = val_data[['qed', 'logp']]
+
+	prop = train_data['logp']
+	vprop = val_data['logp']
 
 	scaffold = train_data['scaffold_smiles']
 	vscaffold = val_data['scaffold_smiles']
@@ -80,11 +84,12 @@ if __name__ == '__main__':
 	valid_dataset = SmileDataset(args, vsmiles, whole_string, max_len, prop = vprop, aug_prob = 0, scaffold = vscaffold, scaffold_maxlen = scaffold_max_len)
 
 	mconf = GPTConfig(train_dataset.vocab_size, train_dataset.max_len, num_props = args.num_props,
-	               n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, scaffold = args.scaffold, scaffold_maxlen = scaffold_max_len)
+	               n_layer=args.n_layer, n_head=args.n_head, n_embd=args.n_embd, scaffold = args.scaffold, scaffold_maxlen = scaffold_max_len,
+	               lstm = args.lstm, lstm_layers = args.lstm_layers)
 	model = GPT(mconf)
 
 	tconf = TrainerConfig(max_epochs=args.max_epochs, batch_size=args.batch_size, learning_rate=args.learning_rate,
 	                      lr_decay=True, warmup_tokens=0.1*len(train_data)*max_len, final_tokens=args.max_epochs*len(train_data)*max_len,
-	                      num_workers=10, ckpt_path = '../cond_gpt/weights/moses_scaffold_2.pt')
+	                      num_workers=10, ckpt_path = '../cond_gpt/weights/moses_scaf_lstm.pt')
 	trainer = Trainer(model, train_dataset, valid_dataset, tconf)
 	trainer.train(wandb)
