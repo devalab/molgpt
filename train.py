@@ -12,10 +12,10 @@ from torch.cuda.amp import GradScaler
 
 from model import GPT, GPTConfig
 from trainer import Trainer, TrainerConfig
-from dataset import SmileDataset
+from dataset_rishal import SmileDataset
 import math
 from utils import SmilesEnumerator
-
+import re
 if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser()
@@ -61,22 +61,24 @@ if __name__ == '__main__':
 	scaffold = train_data['scaffold_smiles']
 	vscaffold = val_data['scaffold_smiles']
 
+	pattern =  "(\[[^\]]+]|<|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+	regex = re.compile(pattern)
 
-
-	lens = [len(i.strip()) for i in (list(smiles.values) + list(vsmiles.values))]
+	lens = [len(regex.findall(i.strip())) for i in (list(smiles.values) + list(vsmiles.values))]
 	max_len = max(lens)
 
-	lens = [len(i.strip()) for i in (list(scaffold.values) + list(vscaffold.values))]
+	lens = [len(regex.findall(i.strip())) for i in (list(scaffold.values) + list(vscaffold.values))]
 	scaffold_max_len = max(lens)
 
-	smiles = [ i + str('<')*(max_len - len(i)) for i in smiles]
-	vsmiles = [ i + str('<')*(max_len - len(i)) for i in vsmiles]
+	smiles = [ i + str('<')*(max_len - len(regex.findall(i.strip()))) for i in smiles]
+	vsmiles = [ i + str('<')*(max_len - len(regex.findall(i.strip()))) for i in vsmiles]
 
-	scaffold = [ i + str('<')*(scaffold_max_len - len(i)) for i in scaffold]
-	vscaffold = [ i + str('<')*(scaffold_max_len - len(i)) for i in vscaffold]
+	scaffold = [ i + str('<')*(scaffold_max_len - len(regex.findall(i.strip()))) for i in scaffold]
+	vscaffold = [ i + str('<')*(scaffold_max_len - len(regex.findall(i.strip()))) for i in vscaffold]
 
-	whole_string = ' '.join(smiles + vsmiles)
-	whole_string = sorted(list(set(whole_string)))
+
+	whole_string = ' '.join(smiles + vsmiles + scaffold + vscaffold)
+	whole_string = sorted(list(set(regex.findall(whole_string))))
 	print(whole_string)
 
 
@@ -90,6 +92,6 @@ if __name__ == '__main__':
 
 	tconf = TrainerConfig(max_epochs=args.max_epochs, batch_size=args.batch_size, learning_rate=args.learning_rate,
 	                      lr_decay=True, warmup_tokens=0.1*len(train_data)*max_len, final_tokens=args.max_epochs*len(train_data)*max_len,
-	                      num_workers=10, ckpt_path = '../cond_gpt/weights/moses_scaf_lstm.pt')
+	                      num_workers=10, ckpt_path = '../cond_gpt/weights/moses_nocond_12layer.pt')
 	trainer = Trainer(model, train_dataset, valid_dataset, tconf)
 	trainer.train(wandb)

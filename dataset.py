@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset
 from utils import SmilesEnumerator
 import numpy as np
+import re
 
 class SmileDataset(Dataset):
 
@@ -31,16 +32,27 @@ class SmileDataset(Dataset):
     def __getitem__(self, idx):
         smiles, prop, scaffold = self.data[idx], self.prop[idx], self.sca[idx]    # self.prop.iloc[idx, :].values  --> if multiple properties
         smiles = smiles.strip()
+        scaffold = scaffold.strip()
 
         p = np.random.uniform()
         if p < self.aug_prob:
             smiles = self.tfm.randomize_smiles(smiles)
 
-        smiles += str('<')*(self.max_len - len(smiles))
-        if len(smiles) > self.max_len:
+        pattern =  "(\[[^\]]+]|<|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+        regex = re.compile(pattern)
+        smiles += str('<')*(self.max_len - len(regex.findall(smiles)))
+
+        if len(regex.findall(smiles)) > self.max_len:
             smiles = smiles[:self.max_len]
 
-        scaffold += str('<')*(self.scaf_max_len - len(scaffold))
+        smiles=regex.findall(smiles)
+
+        scaffold += str('<')*(self.scaf_max_len - len(regex.findall(scaffold)))
+        
+        if len(regex.findall(scaffold)) > self.scaf_max_len:
+            scaffold = scaffold[:self.scaf_max_len]
+
+        scaffold=regex.findall(scaffold)
 
         dix =  [self.stoi[s] for s in smiles]
         sca_dix = [self.stoi[s] for s in scaffold]
