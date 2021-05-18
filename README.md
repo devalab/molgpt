@@ -20,3 +20,6 @@ For scaffold based conditional training:
 python train.py --run_name scaffold_moses --data_name moses --scaffold --num_props 0
 ```
 
+If you find this work useful, please cite:
+
+Bagal, Viraj; Aggarwal, Rishal; Vinod, P. K.; Priyakumar, U. Deva (2021): LigGPT: Molecular Generation using a Transformer-Decoder Model. ChemRxiv. Preprint. https://doi.org/10.26434/chemrxiv.14561901.v1 
