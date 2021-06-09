@@ -3,7 +3,7 @@ In this work, we train small custom GPT on Moses and Guacamol dataset with next 
 
 - The processed Guacamol and MOSES datasets in csv format can be downloaded from this link:
 
-https://github.com/BenevolentAI/guacamol
+https://drive.google.com/drive/folders/1LrtGru7Srj_62WMR4Zcfs7xJ3GZr9N4E?usp=sharing
 
 - Original Guacamol dataset can be found here:
 
