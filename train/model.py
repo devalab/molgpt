@@ -54,8 +54,8 @@ class CausalSelfAttention(nn.Module):
         # output projection
         self.proj = nn.Linear(config.n_embd, config.n_embd)
         # causal mask to ensure that attention is only applied to the left in the input sequence
-        # num = int(bool(config.num_props)) +  int(config.scaffold_maxlen)    #  int(config.scaffold) 
-        num = 1
+        num = int(bool(config.num_props)) + int(config.scaffold_maxlen)   #int(config.lstm_layers)    #  int(config.scaffold) 
+        # num = 1
         self.register_buffer("mask", torch.tril(torch.ones(config.block_size + num, config.block_size + num))
                                      .view(1, 1, config.block_size + num, config.block_size + num))
 
@@ -205,18 +205,22 @@ class GPT(nn.Module):
 
         if self.config.num_props:
             type_embd = self.type_emb(torch.zeros((b, 1), dtype = torch.long, device = idx.device))
-            p = self.prop_nn(prop.unsqueeze(1))
-            # p = self.prop_nn(prop)
+            if prop.ndim == 2:
+                p = self.prop_nn(prop.unsqueeze(1))    # for single property
+            else:
+                p = self.prop_nn(prop)    # for multiproperty
             p += type_embd
             x = torch.cat([p, x], 1)
 
         if self.config.scaffold:
             type_embd = self.type_emb(torch.zeros((b, 1), dtype = torch.long, device = idx.device))
+
             scaffold_embeds = self.tok_emb(scaffold)     # .mean(1, keepdim = True)
             if self.config.lstm:
                 scaffold_embeds = self.lstm(scaffold_embeds.permute(1,0,2))[1][0]
                 # scaffold_embeds = scaffold_embeds.reshape(scaffold_embeds.shape[1], scaffold_embeds.shape[0], 2, self.config.n_embd).mean(2)
-                scaffold_embeds = scaffold_embeds.mean(0, keepdim = True).permute(1,0,2)
+                scaffold_embeds = scaffold_embeds.permute(1,0,2)   # mean(0, keepdim = True)
+                # scaffold_embeds = scaffold_embeds.reshape(self.config.lstm_layers, 1, -1, self.config.n_embd)[-1].permute(1,0,2)
                 # scaffold_embeds = scaffold_embeds.reshape(scaffold_embeds.shape[1], scaffold_embeds.shape[0], self.config.n_embd)
             scaffold_embeds += type_embd
             x = torch.cat([scaffold_embeds, x], 1)
@@ -231,10 +235,25 @@ class GPT(nn.Module):
         x = self.ln_f(x)
         logits = self.head(x)
 
-        if self.config.num_props or self.config.scaffold:
-            # num = int(bool(self.config.num_props)) + int(self.config.scaffold_maxlen)      # int(self.config.scaffold)
-            num = 1
-            logits = logits[:, num:, :]
+        # print(logits.shape)
+        if self.config.num_props and self.config.scaffold:
+            num = int(bool(self.config.num_props)) + int(self.config.scaffold_maxlen)
+        elif self.config.num_props:
+            num = int(bool(self.config.num_props))
+        elif self.config.scaffold:
+            num = int(self.config.scaffold_maxlen) 
+        else:
+            num = 0
+
+        logits = logits[:, num:, :]
+
+
+        # if self.config.num_props or self.config.scaffold:
+
+        #     num = int(bool(self.config.num_props)) + int(self.config.scaffold_maxlen)  #int(self.config.lstm_layers)   # int(self.config.scaffold)      # int(self.config.scaffold)
+            
+
+        # print(logits.shape)
 
         # if we are given some desired targets also calculate the loss
         loss = None

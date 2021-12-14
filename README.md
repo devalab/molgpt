@@ -1,4 +1,4 @@
-# LigGPT
+# MolGPT
 In this work, we train small custom GPT on Moses and Guacamol dataset with next token prediction task. The model is then used for unconditional and conditional molecular generation. We compare our model with previous approaches on the Moses and Guacamol datasets. Saliency maps are obtained for interpretability using Ecco library.
 
 - The processed Guacamol and MOSES datasets in csv format can be downloaded from this link:
@@ -13,28 +13,35 @@ https://github.com/BenevolentAI/guacamol
 
 https://github.com/molecularsets/moses
 
+- All trained weights can be found here:
+
+https://www.kaggle.com/virajbagal/ligflow-final-weights
+
+
 To train the model, make sure you have the datasets' csv file in the same directory as the code files.
 
-- For unconditional training run:
+# Training
 
-```python
-python train.py --run_name unconditional_moses --data_name moses --num_props 0 
+```
+./train_moses.sh
 ```
 
-- For property based conditional training:
-
-```python
-python train.py --run_name conditional_moses --data_name moses --num_props 1 --property logp
+```
+./train_guacamol.sh
 ```
 
-- For scaffold based conditional training:
+# Generation
 
-```python
-python train.py --run_name scaffold_moses --data_name moses --scaffold --num_props 0
+```
+./generate_guacamol_prop.sh
+```
+
+```
+./generate_moses_prop_scaf.sh
 ```
 
 If you find this work useful, please cite:
 
-Bagal, Viraj; Aggarwal, Rishal; Vinod, P. K.; Priyakumar, U. Deva (2021): LigGPT: Molecular Generation using a Transformer-Decoder Model. ChemRxiv. Preprint. https://doi.org/10.26434/chemrxiv.14561901.v1 
+Bagal, Viraj; Aggarwal, Rishal; Vinod, P. K.; Priyakumar, U. Deva (2021): MolGPT: Molecular Generation using a Transformer-Decoder Model. ChemRxiv. Preprint. https://doi.org/10.26434/chemrxiv.14561901.v1 
 
 

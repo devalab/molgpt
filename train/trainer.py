@@ -15,6 +15,13 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data.dataloader import DataLoader
 from torch.cuda.amp import GradScaler
 
+from utils import check_novelty, sample, canonic_smiles
+from moses.utils import get_mol
+import re
+import pandas as pd
+from rdkit import Chem
+
+
 logger = logging.getLogger(__name__)
 
 class TrainerConfig:
@@ -39,7 +46,7 @@ class TrainerConfig:
 
 class Trainer:
 
-    def __init__(self, model, train_dataset, test_dataset, config):
+    def __init__(self, model, train_dataset, test_dataset, config, stoi, itos):
         self.model = model
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
@@ -47,6 +54,9 @@ class Trainer:
 
         # take over whatever gpus are on the system
         self.device = 'cpu'
+        self.stoi = stoi
+        self.itos = itos
+
         if torch.cuda.is_available():
             self.device = torch.cuda.current_device()
             # self.model = torch.nn.DataParallel(self.model).to(self.device)
@@ -63,6 +73,10 @@ class Trainer:
         raw_model = model.module if hasattr(self.model, "module") else model
         optimizer = raw_model.configure_optimizers(config)
         scaler = GradScaler()
+
+        # [' ', '#', '(', ')', '-', '1', '2', '3', '4', '5', '6', '<', '=', 'B', 'C', 'F', 'H', 'N', 'O', 'S', '[', ']', 'c', 'l', 'n', 'o', 'r', 's']
+        # ['#', '(', ')', '-', '1', '2', '3', '4', '5', '6', '<', '=', 'Br', 'C', 'Cl', 'F', 'N', 'O', 'S', '[H]', '[nH]', 'c', 'n', 'o', 's']
+
 
         def run_epoch(split):
             is_train = split == 'train'
@@ -129,6 +143,8 @@ class Trainer:
 
         best_loss = float('inf')
         self.tokens = 0 # counter used for learning rate decay
+        molecules = []
+
         for epoch in range(config.max_epochs):
 
             train_loss = run_epoch('train')
@@ -143,3 +159,26 @@ class Trainer:
                 best_loss = test_loss
                 print(f'Saving at epoch {epoch + 1}')
                 self.save_checkpoint()
+
+            if self.config.generate:
+                pattern =  "(\[[^\]]+]|<|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+                regex = re.compile(pattern)
+                context = "C"
+                for i in range(2):
+                    x = torch.tensor([self.stoi[s] for s in regex.findall(context)], dtype=torch.long)[None,...].repeat(512, 1).to('cuda')
+                    p = None
+                    sca = None
+                    y = sample(model, x, self.config.block_size, temperature=0.8, sample=True, top_k=10, prop = p, scaffold = sca)
+                    for gen_mol in y:
+                        completion = ''.join([self.itos[int(i)] for i in gen_mol])
+                        completion = completion.replace('<', '')
+                        mol = get_mol(completion)
+                        if mol:
+                            smiles = Chem.MolToSmiles(mol)
+                            molecules.append((mol, smiles, epoch))
+
+        if self.config.generate:
+            df = pd.DataFrame(molecules, columns = ['molecule', 'smiles', 'epoch'])
+            return df
+
+        return None
