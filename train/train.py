@@ -86,8 +86,8 @@ if __name__ == '__main__':
     # prop = train_data[['qed']]
     # vprop = val_data[['qed']]
 
-    prop = train_data[args.props]
-    vprop = val_data[args.props]
+    prop = train_data[args.props].values.tolist()
+    vprop = val_data[args.props].values.tolist()
     num_props = args.num_props
 
     scaffold = train_data['scaffold_smiles']
