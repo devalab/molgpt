@@ -57,7 +57,7 @@ if __name__ == '__main__':
         context = "C"
 
 
-        data = pd.read_csv('/home/viraj.bagal/viraj/ligflow/Code/code/cond_gpt/datasets/' + args.data_name + '.csv')
+        data = pd.read_csv(args.data_name + '.csv')
         data = data.dropna(axis=0).reset_index(drop=True)
         data.columns = data.columns.str.lower()
 
@@ -83,32 +83,32 @@ if __name__ == '__main__':
 
         pattern =  "(\[[^\]]+]|<|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
         regex = re.compile(pattern)
-        # lens = [len(regex.findall(i)) for i in smiles]
-        # max_len = max(lens)
-        # smiles = [ i + str('<')*(max_len - len(regex.findall(i))) for i in smiles]
+        #lens = [len(regex.findall(i)) for i in smiles]
+        #max_len = max(lens)
+        #smiles = [ i + str('<')*(max_len - len(regex.findall(i))) for i in smiles]
 
-        # lens = [len(regex.findall(i)) for i in scaf]
-        # scaffold_max_len = max(lens)
+        #lens = [len(regex.findall(i)) for i in scaf]
+        #scaffold_max_len = max(lens)
         
-        # scaf = [ i + str('<')*(scaffold_max_len - len(regex.findall(i))) for i in scaf]
+        #scaf = [ i + str('<')*(scaffold_max_len - len(regex.findall(i))) for i in scaf]
         if ('moses' in args.data_name) and args.scaffold:
             scaffold_max_len=48
         elif ('guacamol' in args.data_name) and args.scaffold:
             scaffold_max_len = 98
         else:
-            scaffold_max_len = 100
+            scaffold_max_len = 0
 
-        # content = ' '.join(smiles + scaf)
-        # chars = sorted(list(set(regex.findall(content))))
+        #content = ' '.join(smiles + scaf)
+        #chars = sorted(list(set(regex.findall(content))))
 
-        # stoi = { ch:i for i,ch in enumerate(chars) }
+        #stoi = { ch:i for i,ch in enumerate(chars) }
 
-        # with open(f'{args.data_name}_stoi.json', 'w') as f:
+        #with open(f'{args.data_name}_stoi.json', 'w') as f:
         #         json.dump(stoi, f)
 
         stoi = json.load(open(f'{args.data_name}_stoi.json', 'r'))
 
-        # itos = { i:ch for i,ch in enumerate(chars) }
+        #itos = { i:ch for i,ch in enumerate(chars) }
         itos = { i:ch for ch,i in stoi.items() }
 
         print(itos)
@@ -125,7 +125,7 @@ if __name__ == '__main__':
         model = GPT(mconf)
 
 
-        model.load_state_dict(torch.load('/home/viraj.bagal/viraj/ligflow/Code/code/cond_gpt/weights/' + args.model_weight))
+        model.load_state_dict(torch.load(args.model_weight))
         model.to('cuda')
         print('Model loaded')
 
@@ -458,7 +458,7 @@ if __name__ == '__main__':
 
 
         results = pd.concat(all_dfs)
-        results.to_csv('gen_csv_again/' + args.csv_name + '.csv', index = False)
+        results.to_csv(args.csv_name + '.csv', index = False)
 
         unique_smiles = list(set(results['smiles']))
         canon_smiles = [canonic_smiles(s) for s in results['smiles']]
